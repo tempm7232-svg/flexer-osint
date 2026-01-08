@@ -10,9 +10,10 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 interface UserDashboardProps {
   profile: UserProfile;
   onLogout: () => void;
+  onToggleAdmin?: () => void;
 }
 
-const UserDashboard: React.FC<UserDashboardProps> = ({ profile, onLogout }) => {
+const UserDashboard: React.FC<UserDashboardProps> = ({ profile, onLogout, onToggleAdmin }) => {
   const [tools, setTools] = useState<OSINTTool[]>([]);
   const [selectedTool, setSelectedTool] = useState<OSINTTool | null>(null);
   const [lookupValue, setLookupValue] = useState('');
@@ -78,8 +79,8 @@ const UserDashboard: React.FC<UserDashboardProps> = ({ profile, onLogout }) => {
       setPasswordError("Password must be at least 6 characters.");
       return;
     }
-    setPasswordLoading(true);
-    setPasswordError('');
+    passwordLoading(true);
+    passwordError('');
     try {
       const user = auth.currentUser;
       if (user) {
@@ -126,6 +127,9 @@ const UserDashboard: React.FC<UserDashboardProps> = ({ profile, onLogout }) => {
             <span className="font-bold text-lg md:text-xl tracking-tighter text-white">FLEXER <span className="text-blue-500">INTEL</span></span>
           </div>
           <div className="flex items-center gap-1">
+            {(profile.isAdmin || profile.isOwner) && onToggleAdmin && (
+               <button onClick={onToggleAdmin} className="p-3 text-gray-500 hover:text-blue-500 transition" title="Back to Command HQ"><i className="fas fa-user-shield"></i></button>
+            )}
             <button onClick={() => setIsPasswordModalOpen(true)} className="p-3 text-gray-500 hover:text-blue-500 transition" title="Change Password"><i className="fas fa-key"></i></button>
             <button onClick={onLogout} className="text-gray-500 hover:text-white transition p-2"><i className="fas fa-power-off"></i></button>
           </div>

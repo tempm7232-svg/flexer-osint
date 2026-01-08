@@ -15,6 +15,7 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'login' | 'register'>('login');
   const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [isAdminView, setIsAdminView] = useState(true);
 
   const getLocalSessionId = useCallback(() => {
     let sid = localStorage.getItem('flexer_sid');
@@ -229,7 +230,11 @@ const App: React.FC = () => {
     }
   }
 
-  return profile.isAdmin ? <AdminPanel profile={profile} onLogout={handleLogout} /> : <UserDashboard profile={profile} onLogout={handleLogout} />;
+  if (profile.isAdmin && isAdminView) {
+    return <AdminPanel profile={profile} onLogout={handleLogout} onViewLive={() => setIsAdminView(false)} />;
+  }
+
+  return <UserDashboard profile={profile} onLogout={handleLogout} onToggleAdmin={() => setIsAdminView(true)} />;
 };
 
 export default App;

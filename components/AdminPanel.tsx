@@ -8,9 +8,10 @@ import ReactQuill from 'react-quill';
 interface AdminPanelProps {
   profile: UserProfile;
   onLogout: () => void;
+  onViewLive: () => void;
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ profile, onLogout }) => {
+const AdminPanel: React.FC<AdminPanelProps> = ({ profile, onLogout, onViewLive }) => {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [tools, setTools] = useState<OSINTTool[]>([]);
   const [activeTab, setActiveTab] = useState<'users' | 'tools' | 'security' | 'devices'>('users');
@@ -149,6 +150,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ profile, onLogout }) => {
             ))}
           </div>
           <div className="flex gap-1">
+            <button onClick={onViewLive} className="p-2 text-gray-500 hover:text-green-500" title="View Live Site"><i className="fas fa-globe"></i></button>
             <button onClick={() => setIsPasswordModalOpen(true)} className="p-2 text-gray-500 hover:text-blue-500" title="Change Password"><i className="fas fa-key"></i></button>
             <button onClick={onLogout} className="p-2 text-gray-500 hover:text-red-500" title="Logout"><i className="fas fa-power-off"></i></button>
           </div>
