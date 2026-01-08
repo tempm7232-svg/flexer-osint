@@ -1,4 +1,3 @@
-
 {
   "name": "flexer-osint",
   "version": "1.0.0",
@@ -11,7 +10,8 @@
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "uuid": "^13.0.0",
-    "react-syntax-highlighter": "^15.6.1"
+    "react-syntax-highlighter": "^15.6.1",
+    "react-quill": "^2.0.0"
   },
   "scripts": {
     "dev": "vite",

@@ -1,4 +1,3 @@
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -11,6 +10,8 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    <React.Suspense fallback={<div className="min-h-screen bg-[#0a0a0a]" />}>
+      <App />
+    </React.Suspense>
   </React.StrictMode>
 );

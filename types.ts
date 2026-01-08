@@ -1,15 +1,19 @@
+export interface SessionMetadata {
+  sid: string;
+  deviceName: string;
+  timestamp: number;
+}
+
 export interface UserProfile {
   uid: string;
   email: string;
   isAdmin: boolean;
   isOwner?: boolean;
   isApproved: boolean;
-  lastSessionId: string;
+  lastSessionId: string; // Used for standard users (1-device limit)
+  authorizedSessions?: SessionMetadata[]; // Used for Admin/Owner (Multi-device management)
   pendingSessionId?: string | null;
-  pendingSessionMetadata?: {
-    deviceName: string;
-    timestamp: number;
-  } | null;
+  pendingSessionMetadata?: SessionMetadata | null;
 }
 
 export interface OSINTTool {
