@@ -1,9 +1,17 @@
+
 import { GoogleGenAI } from "@google/genai";
 
 export const analyzeOSINTResult = async (jsonData: any) => {
-  // Initialize inside to ensure process.env.API_KEY is available from the runtime context.
-  // Always use the named parameter and direct process.env.API_KEY access as per guidelines.
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Ensure we are accessing the process.env safely
+  const apiKey = process.env.API_KEY;
+  
+  if (!apiKey) {
+    console.error("Gemini API key is missing from environment.");
+    return "Intelligence summary unavailable: Security system key not configured.";
+  }
+
+  // Initialize per request to use current environment state
+  const ai = new GoogleGenAI({ apiKey });
 
   try {
     const response = await ai.models.generateContent({
@@ -13,10 +21,12 @@ export const analyzeOSINTResult = async (jsonData: any) => {
         thinkingConfig: { thinkingBudget: 0 }
       }
     });
-    // Directly access the .text property from the response object
-    return response.text;
+
+    // Property .text is the standard way to get result in @google/genai
+    const analysisText = response.text;
+    return analysisText || "Lookup complete. No significant intelligence patterns detected by AI.";
   } catch (error) {
-    console.error("Gemini analysis error:", error);
-    return "Could not generate AI analysis for this data.";
+    console.error("Gemini analysis failure:", error);
+    return "Intelligence analysis interrupted. Raw data available below.";
   }
 };

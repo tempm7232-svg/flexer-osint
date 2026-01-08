@@ -1,10 +1,15 @@
-
 export interface UserProfile {
   uid: string;
   email: string;
   isAdmin: boolean;
+  isOwner?: boolean;
   isApproved: boolean;
   lastSessionId: string;
+  pendingSessionId?: string | null;
+  pendingSessionMetadata?: {
+    deviceName: string;
+    timestamp: number;
+  } | null;
 }
 
 export interface OSINTTool {
@@ -13,6 +18,7 @@ export interface OSINTTool {
   apiUrl: string;
   description: string;
   icon: string;
+  useProxy?: boolean;
 }
 
 export interface LookupResult {
@@ -22,4 +28,5 @@ export interface LookupResult {
   status: 'success' | 'error';
 }
 
-export const ADMIN_TELEGRAM = "flexer_admin_bot"; // Example ID
+export const ADMIN_TELEGRAM = "flexer_admin_bot";
+export const ROOT_OWNER_EMAIL = "owner@flexer.io"; // Change this to your desired owner email

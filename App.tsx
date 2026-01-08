@@ -1,18 +1,8 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  onAuthStateChanged, 
-  signOut, 
-  User 
-} from 'firebase/auth';
-import { 
-  doc, 
-  getDoc, 
-  setDoc, 
-  onSnapshot 
-} from 'firebase/firestore';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { doc, getDoc, setDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { UserProfile } from './types';
+import { UserProfile, ROOT_OWNER_EMAIL } from './types';
 import Login from './components/Login';
 import Register from './components/Register';
 import UserDashboard from './components/UserDashboard';
@@ -24,7 +14,6 @@ const App: React.FC = () => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'login' | 'register'>('login');
-  const [sessionConflict, setSessionConflict] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
 
   const getLocalSessionId = useCallback(() => {
@@ -48,60 +37,54 @@ const App: React.FC = () => {
         const currentSid = getLocalSessionId();
 
         try {
-          // Attempt to get the profile first
           const userDoc = await getDoc(userDocRef);
           
           if (!userDoc.exists()) {
-            // New user registration flow
+            const isOwner = firebaseUser.email === ROOT_OWNER_EMAIL;
             const newProfile: UserProfile = {
               uid: firebaseUser.uid,
               email: firebaseUser.email || '',
-              isAdmin: false, 
-              isApproved: false,
-              lastSessionId: currentSid
+              isAdmin: isOwner, 
+              isOwner: isOwner,
+              isApproved: isOwner,
+              lastSessionId: currentSid,
+              pendingSessionId: null
             };
             await setDoc(userDocRef, newProfile);
             setProfile(newProfile);
           } else {
-            // Existing user - set initial profile data immediately from getDoc
             const existingProfile = userDoc.data() as UserProfile;
-            setProfile({ ...existingProfile, lastSessionId: currentSid });
             
-            // Update session ID in Firestore to enforce single device login
-            await setDoc(userDocRef, { lastSessionId: currentSid }, { merge: true });
+            // Session logic: If session is different, request approval instead of forcing conflict
+            if (existingProfile.lastSessionId !== currentSid) {
+              await updateDoc(userDocRef, { 
+                pendingSessionId: currentSid,
+                pendingSessionMetadata: {
+                  deviceName: navigator.userAgent.split(') ')[0].split('(')[1] || 'Unknown Device',
+                  timestamp: Date.now()
+                }
+              });
+            }
           }
 
-          // Real-time listener for profile updates (admin status, approval, etc.)
-          unsubscribeProfile = onSnapshot(userDocRef, 
-            (snapshot) => {
-              if (snapshot.exists()) {
-                const updatedData = snapshot.data() as UserProfile;
-                setProfile(updatedData);
-                // If lastSessionId doesn't match current, someone else logged in on another device
-                setSessionConflict(updatedData.lastSessionId !== currentSid);
-              }
-            },
-            (error) => {
-              console.error("Firestore Profile Sync Error:", error);
-              if (error.code === 'permission-denied') {
-                setPermissionError("Firestore listener permission denied. This happens when rules block real-time updates.");
-              }
+          unsubscribeProfile = onSnapshot(userDocRef, (snapshot) => {
+            if (snapshot.exists()) {
+              setProfile(snapshot.data() as UserProfile);
             }
-          );
+          }, (error) => {
+            if (error.code === 'permission-denied') {
+              setPermissionError("Security system blocked real-time sync. Check Firestore Rules.");
+            }
+          });
 
           setUser(firebaseUser);
         } catch (err: any) {
-          console.error("Initial Auth Setup Error:", err);
-          if (err.code === 'permission-denied') {
-            setPermissionError("Access Denied: Your Firestore Security Rules are blocking the app. Please ensure you have configured your database rules correctly in the Firebase Console.");
-          } else {
-            setPermissionError(`System Error: ${err.message}`);
-          }
+          console.error("Auth Error:", err);
+          setPermissionError(err.message);
         }
       } else {
         setUser(null);
         setProfile(null);
-        setSessionConflict(false);
         if (unsubscribeProfile) unsubscribeProfile();
       }
       setLoading(false);
@@ -118,10 +101,32 @@ const App: React.FC = () => {
     localStorage.removeItem('flexer_sid');
   };
 
+  const approvePendingSession = async () => {
+    if (!profile || !profile.pendingSessionId) return;
+    await updateDoc(doc(db, 'users', profile.uid), {
+      lastSessionId: profile.pendingSessionId,
+      pendingSessionId: null,
+      pendingSessionMetadata: null
+    });
+  };
+
+  const denyPendingSession = async () => {
+    if (!profile) return;
+    await updateDoc(doc(db, 'users', profile.uid), {
+      pendingSessionId: null,
+      pendingSessionMetadata: null
+    });
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        <div className="relative">
+          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500"></div>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="h-2 w-2 bg-blue-500 rounded-full animate-ping"></div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -129,139 +134,77 @@ const App: React.FC = () => {
   if (permissionError) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4">
-        <div className="max-w-3xl w-full bg-[#111] p-8 rounded-2xl border border-red-900/30 shadow-2xl overflow-y-auto max-h-[90vh]">
-          <div className="flex items-center gap-4 mb-6">
-            <div className="p-3 bg-red-500/10 rounded-full border border-red-500/30">
-              <i className="fas fa-shield-halved text-2xl text-red-500"></i>
-            </div>
-            <h2 className="text-2xl font-bold text-white">Firestore Permission Required</h2>
-          </div>
-          
-          <div className="mb-6 p-4 bg-red-900/10 border border-red-900/30 rounded-xl text-red-400 font-mono text-sm">
-            {permissionError}
-          </div>
-
-          <p className="text-gray-400 mb-6 leading-relaxed">
-            Flexer OSINT requires specific database rules to handle user profiles and admin controls safely. 
-            Follow these steps to resolve this:
-          </p>
-
-          <ol className="list-decimal list-inside text-gray-400 mb-6 space-y-2 text-sm">
-            <li>Open the <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">Firebase Console</a>.</li>
-            <li>Select your project <strong>flexer-osint</strong>.</li>
-            <li>Go to <strong>Firestore Database</strong> in the sidebar.</li>
-            <li>Click the <strong>Rules</strong> tab at the top.</li>
-            <li>Replace the current rules with the code below and click <strong>Publish</strong>.</li>
-          </ol>
-
-          <div className="bg-[#0a0a0a] p-4 rounded-xl border border-gray-800 font-mono text-xs text-blue-400 overflow-x-auto mb-8 relative">
-            <button 
-              onClick={() => {
-                const rules = `rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    // Allow users to read/write their own profile
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-      // Allow admins to manage all users
-      allow read, write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
-    }
-    // Allow approved users to read tools, admins can manage them
-    match /tools/{toolId} {
-      allow read: if request.auth != null && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isApproved == true || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true);
-      allow write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
-    }
-  }
-}`;
-                navigator.clipboard.writeText(rules);
-                alert("Rules copied to clipboard!");
-              }}
-              className="absolute top-2 right-2 p-2 bg-gray-800 rounded hover:bg-gray-700 text-white text-[10px]"
-            >
-              COPY RULES
-            </button>
-            <pre>{`rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-      allow read, write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
-    }
-    match /tools/{toolId} {
-      allow read: if request.auth != null && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isApproved == true || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true);
-      allow write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
-    }
-  }
-}`}</pre>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-4">
-            <button 
-              onClick={() => window.location.reload()}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition"
-            >
-              RELOAD APPLICATION
-            </button>
-            <button 
-              onClick={handleLogout}
-              className="flex-1 bg-transparent border border-gray-700 hover:bg-gray-800 text-gray-400 font-bold py-3 rounded-lg transition"
-            >
-              SIGN OUT
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (sessionConflict) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-[#1a1a1a] p-8 rounded-xl border border-red-900/50 shadow-2xl text-center">
-          <i className="fas fa-exclamation-triangle text-4xl text-red-500 mb-4"></i>
-          <h2 className="text-2xl font-bold mb-4">Session Conflict</h2>
-          <p className="text-gray-400 mb-6">
-            You are logged in on another device. This application only supports one active session at a time.
-          </p>
-          <div className="space-y-3">
-            <button 
-              onClick={async () => {
-                const currentSid = getLocalSessionId();
-                if (user) {
-                  await setDoc(doc(db, 'users', user.uid), { lastSessionId: currentSid }, { merge: true });
-                }
-              }}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition"
-            >
-              Resume on this device
-            </button>
-            <button 
-              onClick={handleLogout}
-              className="w-full bg-transparent border border-gray-700 hover:bg-gray-800 text-gray-300 font-bold py-3 rounded-lg transition"
-            >
-              Sign Out
-            </button>
-          </div>
+        <div className="max-w-md w-full bg-[#111] p-8 rounded-2xl border border-red-900/30 text-center">
+          <i className="fas fa-shield-virus text-4xl text-red-500 mb-4"></i>
+          <h2 className="text-xl font-bold text-white mb-2">Access Denied</h2>
+          <p className="text-gray-400 text-sm mb-6">{permissionError}</p>
+          <button onClick={() => window.location.reload()} className="w-full bg-blue-600 py-3 rounded-xl font-bold">RETRY</button>
         </div>
       </div>
     );
   }
 
   if (!user) {
-    return view === 'login' 
-      ? <Login onSwitch={() => setView('register')} /> 
-      : <Register onSwitch={() => setView('login')} />;
+    return view === 'login' ? <Login onSwitch={() => setView('register')} /> : <Register onSwitch={() => setView('login')} />;
   }
 
-  // Ensure profile is fully loaded before attempting to render any component that consumes it
-  if (!profile) {
+  if (!profile) return null;
+
+  const currentSid = getLocalSessionId();
+
+  // SCENARIO 1: This is the NEW device waiting for approval
+  if (profile.pendingSessionId === currentSid) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-[#111] p-8 rounded-3xl border border-gray-800 text-center shadow-2xl">
+          <div className="w-20 h-20 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-blue-500/20">
+            <i className="fas fa-mobile-screen text-3xl text-blue-500 animate-pulse"></i>
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2">Awaiting Verification</h2>
+          <p className="text-gray-400 text-sm mb-8 leading-relaxed">
+            Your login request has been sent. Please open Flexer on your <span className="text-white font-bold underline">authorized device</span> to approve this session.
+          </p>
+          <div className="space-y-4">
+            <div className="p-4 bg-blue-900/5 rounded-2xl border border-blue-500/10 text-xs text-blue-400 text-left">
+              <div className="flex justify-between mb-1 uppercase tracking-widest font-bold"><span>Status</span> <span>Pending...</span></div>
+              <div className="opacity-60 italic">If you no longer have access to your previous device, please contact an Admin to manually authorize this session.</div>
+            </div>
+            <button onClick={handleLogout} className="w-full bg-transparent border border-gray-800 py-3 rounded-xl text-gray-500 font-bold hover:bg-gray-800 transition">CANCEL REQUEST</button>
+          </div>
+        </div>
       </div>
     );
   }
 
+  // SCENARIO 2: This is the AUTHORIZED device seeing a pending request
+  if (profile.pendingSessionId && profile.lastSessionId === currentSid) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] relative">
+        <div className="absolute inset-0 z-[60] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-[#111] border border-blue-500/30 rounded-3xl p-8 shadow-[0_0_50px_-12px_rgba(59,130,246,0.3)] animate-in zoom-in-95">
+            <div className="flex items-center gap-4 mb-6">
+              <div className="p-3 bg-blue-500/20 rounded-2xl"><i className="fas fa-shield-alt text-xl text-blue-500"></i></div>
+              <div>
+                <h3 className="text-xl font-bold text-white uppercase tracking-tighter">Security Alert</h3>
+                <p className="text-[10px] text-gray-500 uppercase tracking-widest">New Device Recognition</p>
+              </div>
+            </div>
+            <p className="text-gray-400 text-sm mb-6 leading-relaxed">
+              A login attempt was detected on <span className="text-white font-bold">{profile.pendingSessionMetadata?.deviceName}</span>. 
+              Do you authorize this device to take over your secure session?
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <button onClick={approvePendingSession} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl transition shadow-lg shadow-blue-900/20">AUTHORIZE</button>
+              <button onClick={denyPendingSession} className="bg-red-900/20 border border-red-500/30 text-red-500 font-bold py-4 rounded-2xl hover:bg-red-900/40 transition">DENY</button>
+            </div>
+          </div>
+        </div>
+        {profile.isAdmin ? <AdminPanel profile={profile} onLogout={handleLogout} /> : <UserDashboard profile={profile} onLogout={handleLogout} />}
+      </div>
+    );
+  }
+
+  // SCENARIO 3: Normal authenticated state
   if (profile.isAdmin) {
     return <AdminPanel profile={profile} onLogout={handleLogout} />;
   }
